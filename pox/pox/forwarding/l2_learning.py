@@ -13,23 +13,20 @@
 # limitations under the License.
 
 """
-l2 learning switch modificado del codigo original de James McCauley
-Este esqueleto permite realizar manejo de ancho de banda y calidad de servicio a traves de filas
-Antes de iniciar la aplicacion del controlador, las filas deberian estar creadas
+An L2 learning switch.
 
+It is derived from one written live for an SDN crash course.
+It is somwhat similar to NOX's pyswitch in that it installs
+exact-match rules for each flow.
 """
 
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 from pox.lib.util import dpid_to_str
 from pox.lib.util import str_to_bool
-import pox.lib.packet.ethernet as pkt
-from pox.lib.addresses import IPAddr, EthAddr
 import time
-import datetime
 
 log = core.getLogger()
-ip_servidor = "10.0.0.4"
 
 # We don't want to flood immediately when a switch connects.
 # Can be overriden on commandline.
@@ -94,40 +91,6 @@ class LearningSwitch (object):
     #log.debug("Initializing LearningSwitch, transparent=%s",
     #          str(self.transparent))
 
-  def enviar_a_fila(self, event, port):
-
-    # Este metodo en particular, envia hacia una fila determinada por el ultimo octeto de la IP de origen, si la direccion es 10.0.0.1 enviara a la fila 1
-    # note que tomamos el parametro "port" que nos indica el puerto de destino 
-
-    packet = event.parsed
-    ip_packet = packet.payload
-    ip_origen = ip_packet.srcip
-
-    hora1 = datetime.strftime("06:00:00", "%X").time()
-    hora2 = datetime.strftime("18:00:00", "%X").time()
-    hora_act = datetime.now().time()
-
-    print hora_act
-    if hora_act > hora1 and hora_act < hora2:
-      print "Hora actual 1 " + hora_act
-      id_fila = 1
-    else:
-      print "Hora actual 2 " + hora_act
-      id_fila = 2
-
-    #id_fila = str(ip_origen).split(".")[3]
-    print "La fila seria: ", id_fila
-
-    msg = of.ofp_flow_mod()
-    msg.match = of.ofp_match.from_packet(packet, event.port)
-    msg.idle_timeout = 10
-    msg.hard_timeout = 30
-
-    # La unica diferencia respecto a un "output" normal, es que agregamos el id de la fila
-    msg.actions.append(of.ofp_action_enqueue(port = port, queue_id=int(id_fila)))
-    msg.data = event.ofp # 6a
-    self.connection.send(msg)
-
   def _handle_PacketIn (self, event):
     """
     Handle packet in messages from the switch to implement above algorithm.
@@ -186,10 +149,6 @@ class LearningSwitch (object):
         drop() # 2a
         return
 
-    # Este es el lugar apropiado para ingresar nuestra funcion personalizada, porque ya se realizaron los chequeos que le permiten a l2 enrutar paquetes
-    # Note el siguiente if, es imporante porque en este evento llegan TODOS los paquetes que pasen por la red (incluyendo paquetes ARP que no son IP)
-    # Por esta razon, solo aplicamos reglas a los paquetes IP 
-    # Nota: Este if no aplicaria para el proyecto que tiene el proyecto "arp defense" por obvias razones
     if packet.dst.is_multicast:
       flood() # 3a
     else:
@@ -204,27 +163,6 @@ class LearningSwitch (object):
           drop(10)
           return
         # 6
-
-        if packet.type == pkt.IP_TYPE:
-
-          # El evento packet_in recibe un objeto llamado "evento", este evento cont$
-          # 1. El puerto por el que ingresa el paquete, que es necesario para reali$
-          # 2. El paquete que produjo el evento, lo que hace este codigo es parsear$
-          #    si debe o no bloquear el flujo
-          ip_packet = packet.payload
-          # El paquete que recibimos es de tipo "Ethernet", asi que su carga util s$
-          # El paquete ip_packet ya es un paquete IP, por lo tal posee un campo que$
-          ip_destino = ip_packet.dstip
-          print "IP Destino: ", ip_destino
-          # Note la funcion IPAddr, se usa para manejar direcciones IP, en este cas$
-          if (ip_destino == IPAddr(ip_servidor)):
-                # Solo estamos enviando hacia las filas el trafico de salida hacia el servidor
-                print "Enviar a fila"
-                self.enviar_a_fila(event, port)
-		return
-        else:
-          print "Not IP packet"
-
         log.debug("installing flow for %s.%i -> %s.%i" %
                   (packet.src, event.port, packet.dst, port))
         msg = of.ofp_flow_mod()
